@@ -1,0 +1,279 @@
+package handlers
+
+import (
+	"log"
+	"net/http"
+
+	"github.com/dotbinio/taskwarrior-api/internal/taskwarrior"
+	"github.com/gin-gonic/gin"
+)
+
+// TaskHandler handles task-related requests
+type TaskHandler struct {
+	client *taskwarrior.Client
+}
+
+// NewTaskHandler creates a new task handler
+func NewTaskHandler(client *taskwarrior.Client) *TaskHandler {
+	return &TaskHandler{
+		client: client,
+	}
+}
+
+// ListTasks handles GET /api/v1/tasks
+func (h *TaskHandler) ListTasks(c *gin.Context) {
+	// Get query parameters for filtering
+	status := c.DefaultQuery("status", "pending")
+	project := c.Query("project")
+	tags := c.QueryArray("tags")
+
+	// Build filter string for Taskwarrior
+	filterParts := []string{}
+	if status != "" {
+		filterParts = append(filterParts, "status:"+status)
+	}
+	if project != "" {
+		filterParts = append(filterParts, "project:"+project)
+	}
+	for _, tag := range tags {
+		filterParts = append(filterParts, "+"+tag)
+	}
+
+	filter := ""
+	if len(filterParts) > 0 {
+		for _, part := range filterParts {
+			filter += part + " "
+		}
+	}
+
+	tasks, err := h.client.Export(filter)
+	if err != nil {
+		log.Printf("Failed to retrieve tasks: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to retrieve tasks",
+			"code":  "TASK_EXPORT_FAILED",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"tasks": tasks,
+		"count": len(tasks),
+	})
+}
+
+// GetTask handles GET /api/v1/tasks/:uuid
+func (h *TaskHandler) GetTask(c *gin.Context) {
+	uuid := c.Param("uuid")
+
+	if !taskwarrior.ValidateTaskUUID(uuid) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid task UUID format",
+			"code":  "INVALID_UUID",
+		})
+		return
+	}
+
+	task, err := h.client.GetByUUID(uuid)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "task not found",
+			"code":  "TASK_NOT_FOUND",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, task)
+}
+
+// CreateTask handles POST /api/v1/tasks
+func (h *TaskHandler) CreateTask(c *gin.Context) {
+	var taskCreate taskwarrior.TaskCreate
+
+	if err := c.ShouldBindJSON(&taskCreate); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid request body",
+			"code":  "INVALID_REQUEST",
+		})
+		return
+	}
+
+	// Sanitize description
+	taskCreate.Description = taskwarrior.SanitizeInput(taskCreate.Description)
+	if taskCreate.Project != "" {
+		taskCreate.Project = taskwarrior.SanitizeInput(taskCreate.Project)
+	}
+
+	uuid, err := h.client.Add(taskCreate)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to create task",
+			"code":  "TASK_CREATE_FAILED",
+		})
+		return
+	}
+
+	// Retrieve the created task
+	task, err := h.client.GetByUUID(uuid)
+	if err != nil {
+		// Task was created but we can't retrieve it
+		c.JSON(http.StatusCreated, gin.H{
+			"uuid":    uuid,
+			"message": "task created successfully",
+		})
+		return
+	}
+
+	c.JSON(http.StatusCreated, task)
+}
+
+// UpdateTask handles PATCH /api/v1/tasks/:uuid
+func (h *TaskHandler) UpdateTask(c *gin.Context) {
+	uuid := c.Param("uuid")
+
+	if !taskwarrior.ValidateTaskUUID(uuid) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid task UUID format",
+			"code":  "INVALID_UUID",
+		})
+		return
+	}
+
+	var taskModify taskwarrior.TaskModify
+	if err := c.ShouldBindJSON(&taskModify); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid request body",
+			"code":  "INVALID_REQUEST",
+		})
+		return
+	}
+
+	// Sanitize inputs
+	if taskModify.Description != nil {
+		desc := taskwarrior.SanitizeInput(*taskModify.Description)
+		taskModify.Description = &desc
+	}
+	if taskModify.Project != nil {
+		proj := taskwarrior.SanitizeInput(*taskModify.Project)
+		taskModify.Project = &proj
+	}
+
+	if err := h.client.Modify(uuid, taskModify); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to update task",
+			"code":  "TASK_UPDATE_FAILED",
+		})
+		return
+	}
+
+	// Retrieve the updated task
+	task, err := h.client.GetByUUID(uuid)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "task updated successfully",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, task)
+}
+
+// DeleteTask handles DELETE /api/v1/tasks/:uuid
+func (h *TaskHandler) DeleteTask(c *gin.Context) {
+	uuid := c.Param("uuid")
+
+	if !taskwarrior.ValidateTaskUUID(uuid) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid task UUID format",
+			"code":  "INVALID_UUID",
+		})
+		return
+	}
+
+	if err := h.client.Delete(uuid); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to delete task",
+			"code":  "TASK_DELETE_FAILED",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "task deleted successfully",
+	})
+}
+
+// DoneTask handles POST /api/v1/tasks/:uuid/done
+func (h *TaskHandler) DoneTask(c *gin.Context) {
+	uuid := c.Param("uuid")
+
+	if !taskwarrior.ValidateTaskUUID(uuid) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid task UUID format",
+			"code":  "INVALID_UUID",
+		})
+		return
+	}
+
+	if err := h.client.Done(uuid); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to mark task as done",
+			"code":  "TASK_DONE_FAILED",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "task marked as done",
+	})
+}
+
+// StartTask handles POST /api/v1/tasks/:uuid/start
+func (h *TaskHandler) StartTask(c *gin.Context) {
+	uuid := c.Param("uuid")
+
+	if !taskwarrior.ValidateTaskUUID(uuid) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid task UUID format",
+			"code":  "INVALID_UUID",
+		})
+		return
+	}
+
+	if err := h.client.Start(uuid); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to start task",
+			"code":  "TASK_START_FAILED",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "task started",
+	})
+}
+
+// StopTask handles POST /api/v1/tasks/:uuid/stop
+func (h *TaskHandler) StopTask(c *gin.Context) {
+	uuid := c.Param("uuid")
+
+	if !taskwarrior.ValidateTaskUUID(uuid) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid task UUID format",
+			"code":  "INVALID_UUID",
+		})
+		return
+	}
+
+	if err := h.client.Stop(uuid); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to stop task",
+			"code":  "TASK_STOP_FAILED",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "task stopped",
+	})
+}

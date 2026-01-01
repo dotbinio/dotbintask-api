@@ -1,0 +1,90 @@
+package api
+
+import (
+	"github.com/dotbinio/taskwarrior-api/internal/api/handlers"
+	"github.com/dotbinio/taskwarrior-api/internal/api/middleware"
+	"github.com/dotbinio/taskwarrior-api/internal/auth"
+	"github.com/dotbinio/taskwarrior-api/internal/config"
+	"github.com/dotbinio/taskwarrior-api/internal/taskwarrior"
+	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
+)
+
+// SetupRouter creates and configures the Gin router
+func SetupRouter(cfg *config.Config, twClient *taskwarrior.Client, validator *auth.TokenValidator) *gin.Engine {
+	// Set Gin mode
+	if cfg.Logging.Level == "debug" {
+		gin.SetMode(gin.DebugMode)
+	} else {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
+	router := gin.New()
+
+	// Recovery middleware
+	router.Use(gin.Recovery())
+
+	// Logging middleware
+	router.Use(middleware.LoggingMiddleware())
+
+	// CORS middleware
+	if cfg.CORS.Enabled {
+		corsConfig := cors.Config{
+			AllowOrigins:     cfg.CORS.AllowedOrigins,
+			AllowMethods:     []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
+			AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+			ExposeHeaders:    []string{"Content-Length"},
+			AllowCredentials: true,
+		}
+		router.Use(cors.New(corsConfig))
+	}
+
+	// Health check endpoint (no auth required)
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"status":  "ok",
+			"service": "taskwarrior-api",
+		})
+	})
+
+	// API v1 routes
+	v1 := router.Group("/api/v1")
+	v1.Use(middleware.AuthMiddleware(validator))
+
+	// Initialize handlers
+	taskHandler := handlers.NewTaskHandler(twClient)
+	reportHandler := handlers.NewReportHandler(twClient)
+	projectHandler := handlers.NewProjectHandler(twClient)
+
+	// Task routes
+	tasks := v1.Group("/tasks")
+	{
+		tasks.GET("", taskHandler.ListTasks)
+		tasks.POST("", taskHandler.CreateTask)
+		tasks.GET("/:uuid", taskHandler.GetTask)
+		tasks.PATCH("/:uuid", taskHandler.UpdateTask)
+		tasks.DELETE("/:uuid", taskHandler.DeleteTask)
+		tasks.POST("/:uuid/done", taskHandler.DoneTask)
+		tasks.POST("/:uuid/start", taskHandler.StartTask)
+		tasks.POST("/:uuid/stop", taskHandler.StopTask)
+	}
+
+	// Report routes
+	reports := v1.Group("/reports")
+	{
+		reports.GET("/next", reportHandler.NextReport)
+		reports.GET("/active", reportHandler.ActiveReport)
+		reports.GET("/completed", reportHandler.CompletedReport)
+		reports.GET("/waiting", reportHandler.WaitingReport)
+		reports.GET("/all", reportHandler.AllReport)
+	}
+
+	// Project routes
+	projects := v1.Group("/projects")
+	{
+		projects.GET("", projectHandler.ListProjects)
+		projects.GET("/:name/tasks", projectHandler.GetProjectTasks)
+	}
+
+	return router
+}
