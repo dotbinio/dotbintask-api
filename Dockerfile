@@ -48,4 +48,6 @@ RUN mkdir -p /root/.task && \
 # Expose port
 EXPOSE 8080
 
+LABEL org.opencontainers.image.source = "https://github.com/dotbinio/taskwarrior-api"
+
 CMD ["./taskwarrior-api"]

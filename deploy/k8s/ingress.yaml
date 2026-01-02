@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: taskwarrior-api
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - '*.cosmos.cboxlab.com'
+    secretName: cosmos-cboxlab-cert
+  rules:
+  - host: taskwarrior-api.cosmos.cboxlab.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: taskwarrior-api
+            port:
+              number: 8080
+

@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskwarrior-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: taskwarrior-api
+  template:
+    metadata:
+      labels:
+        app: taskwarrior-api
+    spec:
+      containers:
+      - name: taskwarrior-api
+        image: taskwarrior-api
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: TW_API_TOKENS
+          valueFrom:
+            secretKeyRef:
+              name: taskwarrior-api-secret
+              key: tokens
+        - name: TW_API_HOST
+          value: "0.0.0.0"
+        - name: TW_API_PORT
+          value: "8080"
+        - name: TW_DATA_LOCATION
+          value: "/root/.task"
+        - name: TW_API_LOG_LEVEL
+          value: "info"
+        - name: TW_API_CORS_ENABLED
+          value: "true"
+        - name: TW_API_CORS_ORIGINS
+          value: "*"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 3
+          periodSeconds: 5
+        volumeMounts:
+        - name: task-data
+          mountPath: /root/.task
+      volumes:
+      - name: task-data
+        emptyDir: {}
+
