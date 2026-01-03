@@ -44,7 +44,7 @@ func (h *ReportHandler) ListReports(c *gin.Context) {
 	})
 }
 
-// GetReport handles GET /api/v1/reports/:name
+// GetReport handles GET /api/v1/reports/:name/tasks
 // @Summary      Get tasks report by name
 // @Description  Get tasks by report name (eg: next, active, completed, waiting, all)
 // @Tags         reports
@@ -54,7 +54,7 @@ func (h *ReportHandler) ListReports(c *gin.Context) {
 // @Failure      400  {object}  map[string]interface{}
 // @Failure      500  {object}  map[string]interface{}
 // @Security     BearerAuth
-// @Router       /reports/{name} [get]
+// @Router       /reports/{name}/tasks [get]
 func (h *ReportHandler) GetReport(c *gin.Context) {
 	reportName := c.Param("name")
 
