@@ -17,7 +17,6 @@ RUN go install github.com/swaggo/swag/cmd/swag@latest
 # Copy source code
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
-COPY pkg/ ./pkg/
 COPY web/ ./web/
 
 # Generate Swagger docs and build
@@ -68,6 +67,6 @@ EXPOSE 8080
 ENV PUID=1000
 ENV PGID=1000
 
-LABEL org.opencontainers.image.source "https://github.com/dotbinio/taskwarrior-api"
+LABEL org.opencontainers.image.source="https://github.com/dotbinio/taskwarrior-api"
 
 ENTRYPOINT ["/app/entrypoint.sh"]
