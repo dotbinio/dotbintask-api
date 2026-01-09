@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"sort"
 
 	"github.com/dotbinio/taskwarrior-api/internal/taskwarrior"
 	"github.com/gin-gonic/gin"
@@ -37,6 +38,11 @@ func (h *ReportHandler) ListReports(c *gin.Context) {
 		})
 		return
 	}
+
+	// Sort reports by name
+	sort.Slice(reports, func(i, j int) bool {
+		return reports[i].Name < reports[j].Name
+	})
 
 	c.JSON(http.StatusOK, gin.H{
 		"reports": reports,
