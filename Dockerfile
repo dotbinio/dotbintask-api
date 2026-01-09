@@ -44,14 +44,30 @@ COPY --from=builder /build/taskwarrior-api .
 # Copy web templates
 COPY --from=builder /build/web ./web
 
+# Copy entrypoint script
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+# Create a default non-root user (UID/GID will be modified at runtime)
+RUN groupadd -g 1000 appuser && \
+    useradd -u 1000 -g 1000 -m -s /bin/bash appuser
+
 # Create directory for Taskwarrior data and initialize config
-RUN mkdir -p /root/.task && \
-    echo "data.location=/root/.task" > /root/.taskrc && \
-    echo "confirmation=no" >> /root/.taskrc
+RUN mkdir -p /home/appuser/.task && \
+    echo "data.location=/home/appuser/.task" > /home/appuser/.taskrc && \
+    echo "confirmation=no" >> /home/appuser/.taskrc && \
+    chown -R appuser:appuser /home/appuser/.task /home/appuser/.taskrc
+
+# Change ownership of app directory
+RUN chown -R appuser:appuser /app
 
 # Expose port
 EXPOSE 8080
 
+# Set environment variables with defaults
+ENV PUID=1000
+ENV PGID=1000
+
 LABEL org.opencontainers.image.source "https://github.com/dotbinio/taskwarrior-api"
 
-CMD ["./taskwarrior-api"]
+ENTRYPOINT ["/app/entrypoint.sh"]
